@@ -30,6 +30,37 @@ Expo), built with React Native + Expo.
 - Two color **themes** (Classic, Midnight), selectable in settings.
 - Gradient backgrounds, animated menu hero, and an animated post-game overlay.
 
+**Pass three (complete):** series play, options, and monetization backbone.
+
+- **Best-of-N series** with a score counter under the board — selectable
+  3/5/7/9/11/15/21 in settings (default best of 3); first to a majority wins
+  the series. Draws count as a played game but award no point.
+- **First-move preference** vs the bot — You / Bot / Random — in settings.
+  Pass-and-play alternates the starter each game.
+- **Ads backbone:** a bottom banner plus full-screen interstitials on Undo,
+  Menu (mid-game), and after every game, with a short cooldown so two never
+  stack back-to-back.
+- **Remove Ads** one-time purchase ($1.99): a full entitlement layer (buy /
+  restore, persisted) that hides all ads. The real StoreKit/AdMob calls only
+  run in a native build, so they're isolated behind a documented seam with
+  runnable placeholders (see below).
+- Settings persist across restarts (AsyncStorage).
+
+### Ads & purchase — native-build wiring
+
+Ads and in-app purchases cannot run in Expo Go; they need a native build
+(`eas build` / Xcode) and store configuration. The app ships the full
+structure with the store/ads SDK calls stubbed so it stays runnable now:
+
+- `src/services/ads.js` — interstitial flow + `<InterstitialPlaceholder>`.
+  Replace the placeholder with a real AdMob `InterstitialAd`, and
+  `src/components/BannerAd.js` with a real AdMob `BannerAd`
+  (`react-native-google-mobile-ads`).
+- `src/services/purchases.js` — entitlement state with a `runStorePurchase` /
+  `runStoreRestore` seam. Set `SIMULATE_PURCHASES = false` and drop in
+  StoreKit (`react-native-iap` / `expo-in-app-purchases` / RevenueCat) using
+  `REMOVE_ADS_PRODUCT_ID`. Everything else in the app stays the same.
+
 ## Architecture
 
 Game logic is deliberately isolated from the UI so it is easy to test and to
@@ -43,14 +74,17 @@ src/
     winDetection.js #   win / draw detection
     minimax.js      #   bot AI (alpha-beta) + difficulty presets
     gameEngine.js   #   immutable game-state composition (turns, status)
+    series.js       #   best-of-N scoring + starter selection
     __tests__/      #   jest unit tests
   theme/themes.js   # color themes
-  state/            # settings context (theme, sound, haptics)
+  state/            # settings context (persisted: theme, sound, series, ...)
   services/
     feedback.js     # sound + haptic playback (gated on settings)
-  components/       # Board, Disc (animated), Button
+    ads.js          # interstitial flow + provider (AdMob seam)
+    purchases.js    # Remove Ads entitlement (StoreKit seam)
+  components/       # Board, Disc (animated), Button, BannerAd
   screens/          # MainMenu, Game, Settings
-App.js              # root screen switcher
+App.js              # root screen switcher + providers
 assets/sounds/      # generated WAV sound effects
 ```
 

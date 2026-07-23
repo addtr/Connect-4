@@ -6,6 +6,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, StyleSheet, SafeAreaView, Animated } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Button from '../components/Button';
+import BannerAd from '../components/BannerAd';
 import { useSettings } from '../state/SettingsContext';
 import { DIFFICULTY } from '../logic/minimax';
 import { MODE } from '../logic/gameEngine';
@@ -107,6 +108,7 @@ function MainMenuScreen({ onStartGame, onOpenSettings }) {
           )}
         </View>
       </SafeAreaView>
+      <BannerAd />
     </View>
   );
 }

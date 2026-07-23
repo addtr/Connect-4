@@ -14,6 +14,15 @@ import {
 import { checkWinner, checkWinFromMove, isDraw } from '../winDetection';
 import { createGame, applyMove, undoMove, STATUS } from '../gameEngine';
 import { chooseBotMove, findImmediateWin, DIFFICULTY } from '../minimax';
+import {
+  createMatch,
+  recordGameResult,
+  isSeriesOver,
+  winsNeeded,
+  resolveVsBotStarter,
+  passAndPlayStarter,
+  START_PREFERENCE,
+} from '../series';
 
 describe('board mechanics', () => {
   test('createBoard is empty and correctly sized', () => {
@@ -139,6 +148,60 @@ describe('game engine', () => {
     g = undoMove(g);
     expect(g.currentPlayer).toBe(afterOne.currentPlayer);
     expect(g.moveHistory).toHaveLength(1);
+  });
+
+  test('a configurable starting player moves first and survives undo', () => {
+    let g = createGame(PLAYER_TWO);
+    expect(g.currentPlayer).toBe(PLAYER_TWO);
+    g = applyMove(g, 0); // P2
+    expect(g.currentPlayer).toBe(PLAYER_ONE);
+    g = applyMove(g, 1); // P1
+    g = undoMove(g);
+    expect(g.currentPlayer).toBe(PLAYER_ONE);
+    g = undoMove(g);
+    expect(g.currentPlayer).toBe(PLAYER_TWO); // back to the original starter
+  });
+});
+
+describe('best-of-N series', () => {
+  test('winsNeeded is a majority of the series length', () => {
+    expect(winsNeeded(3)).toBe(2);
+    expect(winsNeeded(5)).toBe(3);
+    expect(winsNeeded(21)).toBe(11);
+  });
+
+  test('scores accumulate and a draw awards no point', () => {
+    let m = createMatch(5);
+    expect(m.target).toBe(3);
+    m = recordGameResult(m, PLAYER_ONE);
+    m = recordGameResult(m, PLAYER_TWO);
+    m = recordGameResult(m, null); // draw
+    expect(m.scoreP1).toBe(1);
+    expect(m.scoreP2).toBe(1);
+    expect(m.gamesPlayed).toBe(3);
+    expect(isSeriesOver(m)).toBe(false);
+  });
+
+  test('series ends when a player reaches the target', () => {
+    let m = createMatch(3); // first to 2
+    m = recordGameResult(m, PLAYER_ONE);
+    expect(isSeriesOver(m)).toBe(false);
+    m = recordGameResult(m, PLAYER_ONE);
+    expect(isSeriesOver(m)).toBe(true);
+    expect(m.seriesWinner).toBe(PLAYER_ONE);
+  });
+
+  test('start-preference resolution', () => {
+    expect(resolveVsBotStarter(START_PREFERENCE.YOU)).toBe(PLAYER_ONE);
+    expect(resolveVsBotStarter(START_PREFERENCE.BOT)).toBe(PLAYER_TWO);
+    const r = resolveVsBotStarter(START_PREFERENCE.RANDOM);
+    expect([PLAYER_ONE, PLAYER_TWO]).toContain(r);
+  });
+
+  test('pass-and-play alternates the starter each game', () => {
+    expect(passAndPlayStarter(0)).toBe(PLAYER_ONE);
+    expect(passAndPlayStarter(1)).toBe(PLAYER_TWO);
+    expect(passAndPlayStarter(2)).toBe(PLAYER_ONE);
   });
 });
 

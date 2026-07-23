@@ -1,14 +1,17 @@
-// The gameplay screen. Handles both modes (vs bot, pass-and-play), the turn
-// indicator, bot turns with a short "thinking" delay, sound/haptic feedback, and
-// an animated post-game result overlay. All rules live in gameEngine / minimax —
-// this screen drives them and renders state.
+// The gameplay screen. Handles both modes, the turn indicator, bot turns with a
+// short "thinking" delay, sound/haptic feedback, a best-of-N series with a score
+// counter, the configurable first-move preference, and ads (interstitials on
+// undo / menu / game-end, plus a bottom banner). Rules live in gameEngine /
+// minimax / series — this screen drives them and renders state.
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { View, Text, StyleSheet, SafeAreaView, Animated } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Board from '../components/Board';
 import Button from '../components/Button';
+import BannerAd from '../components/BannerAd';
 import { useSettings } from '../state/SettingsContext';
+import { useAds } from '../services/ads';
 import {
   createGame,
   applyMove,
@@ -18,6 +21,13 @@ import {
 } from '../logic/gameEngine';
 import { PLAYER_ONE, PLAYER_TWO } from '../logic/constants';
 import { chooseBotMove } from '../logic/minimax';
+import {
+  createMatch,
+  recordGameResult,
+  isSeriesOver,
+  resolveVsBotStarter,
+  passAndPlayStarter,
+} from '../logic/series';
 import { playerColors } from '../theme/themes';
 import {
   playDrop,
@@ -35,21 +45,33 @@ const BOT_PLAYER = PLAYER_TWO;
 const BOT_THINK_MS = 500;
 
 function GameScreen({ config, onExit }) {
-  const { theme, soundEnabled, hapticsEnabled } = useSettings();
-  const [game, setGame] = useState(() => createGame());
+  const { theme, soundEnabled, hapticsEnabled, startPreference, seriesLength } =
+    useSettings();
+  const { showInterstitial } = useAds();
+
+  const isVsBot = config.mode === MODE.VS_BOT;
+
+  // Who starts game number `gamesPlayed` in the current series.
+  const starterFor = useCallback(
+    (gamesPlayed) =>
+      isVsBot ? resolveVsBotStarter(startPreference) : passAndPlayStarter(gamesPlayed),
+    [isVsBot, startPreference],
+  );
+
+  const [match, setMatch] = useState(() => createMatch(seriesLength));
+  const [game, setGame] = useState(() => createGame(starterFor(0)));
   const [botThinking, setBotThinking] = useState(false);
   const timerRef = useRef(null);
 
   const prevMoves = useRef(0);
   const prevStatus = useRef(STATUS.PLAYING);
 
-  const isVsBot = config.mode === MODE.VS_BOT;
   const isBotTurn = isVsBot && game.currentPlayer === BOT_PLAYER;
 
   const handleColumnPress = useCallback(
     (col) => {
       if (game.status !== STATUS.PLAYING) return;
-      if (isBotTurn) return; // ignore taps during the bot's turn
+      if (isBotTurn) return;
       setGame((g) => applyMove(g, col));
     },
     [game.status, isBotTurn],
@@ -80,7 +102,7 @@ function GameScreen({ config, onExit }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [game, isVsBot]);
 
-  // Sound + haptic feedback driven off state transitions.
+  // Feedback + series scoring, driven off state transitions.
   useEffect(() => {
     const moves = game.moveHistory.length;
     if (moves > prevMoves.current) {
@@ -90,42 +112,70 @@ function GameScreen({ config, onExit }) {
     prevMoves.current = moves;
 
     if (game.status !== prevStatus.current) {
-      if (game.status === STATUS.WIN) {
-        // Let the drop settle first, then celebrate.
-        setTimeout(() => {
-          playWin(soundEnabled);
-          hapticWin(hapticsEnabled);
-        }, 280);
-      } else if (game.status === STATUS.DRAW) {
-        setTimeout(() => {
-          playDraw(soundEnabled);
-          hapticDraw(hapticsEnabled);
-        }, 280);
+      if (game.status === STATUS.WIN || game.status === STATUS.DRAW) {
+        // Record the game into the series exactly once.
+        setMatch((m) => recordGameResult(m, game.winner));
+        // Celebrate, then show a post-game interstitial.
+        if (game.status === STATUS.WIN) {
+          setTimeout(() => {
+            playWin(soundEnabled);
+            hapticWin(hapticsEnabled);
+          }, 280);
+        } else {
+          setTimeout(() => {
+            playDraw(soundEnabled);
+            hapticDraw(hapticsEnabled);
+          }, 280);
+        }
+        setTimeout(() => showInterstitial(), 700);
       }
       prevStatus.current = game.status;
     }
-  }, [game, soundEnabled, hapticsEnabled]);
+  }, [game, soundEnabled, hapticsEnabled, showInterstitial]);
 
-  const resetGame = () => {
-    if (timerRef.current) clearTimeout(timerRef.current);
-    setBotThinking(false);
-    prevMoves.current = 0;
-    prevStatus.current = STATUS.PLAYING;
-    setGame(createGame());
+  const resetPerGameRefs = (g) => {
+    prevMoves.current = g.moveHistory.length;
+    prevStatus.current = g.status;
   };
 
-  const handleUndo = () => {
+  // Start the next game in the current series.
+  const nextGame = () => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    setBotThinking(false);
+    const g = createGame(starterFor(match.gamesPlayed));
+    resetPerGameRefs(g);
+    setGame(g);
+  };
+
+  // Start a brand new series (fresh scores).
+  const newSeries = () => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    setBotThinking(false);
+    setMatch(createMatch(seriesLength));
+    const g = createGame(starterFor(0));
+    resetPerGameRefs(g);
+    setGame(g);
+  };
+
+  // Undo — gated behind an interstitial, per the app's ad design.
+  const handleUndo = async () => {
     if (botThinking) return;
+    if (game.moveHistory.length === 0) return;
+    await showInterstitial();
     setGame((g) => {
       let next = undoMove(g);
       if (isVsBot && next.currentPlayer === BOT_PLAYER && next.moveHistory.length > 0) {
         next = undoMove(next);
       }
-      // Keep feedback counters in sync so undo doesn't trigger a drop sound.
-      prevMoves.current = next.moveHistory.length;
-      prevStatus.current = next.status;
+      resetPerGameRefs(next);
       return next;
     });
+  };
+
+  // Menu — also gated behind an interstitial.
+  const handleMenu = async () => {
+    await showInterstitial();
+    onExit();
   };
 
   useEffect(() => {
@@ -140,6 +190,8 @@ function GameScreen({ config, onExit }) {
       ? playerColors(theme, game.currentPlayer).color
       : theme.textMuted;
 
+  const seriesDone = isSeriesOver(match);
+
   return (
     <View style={styles.root}>
       <LinearGradient
@@ -152,7 +204,7 @@ function GameScreen({ config, onExit }) {
             title="Menu"
             theme={theme}
             variant="ghost"
-            onPress={onExit}
+            onPress={handleMenu}
             style={styles.smallBtn}
           />
           <TurnIndicator
@@ -179,20 +231,54 @@ function GameScreen({ config, onExit }) {
             winningCells={game.winningCells}
             previewPlayer={game.currentPlayer}
           />
+          <ScoreBoard match={match} config={config} theme={theme} />
         </View>
 
         {game.status !== STATUS.PLAYING ? (
           <ResultOverlay
             game={game}
+            match={match}
             config={config}
             theme={theme}
-            onPlayAgain={resetGame}
-            onExit={onExit}
+            seriesDone={seriesDone}
+            onNextGame={nextGame}
+            onNewSeries={newSeries}
+            onExit={handleMenu}
           />
         ) : (
           <View style={styles.bottomSpacer} />
         )}
       </SafeAreaView>
+
+      <BannerAd />
+    </View>
+  );
+}
+
+// Score counter shown beneath the board.
+function ScoreBoard({ match, config, theme }) {
+  const nameOne = playerName(PLAYER_ONE, config);
+  const nameTwo = playerName(PLAYER_TWO, config);
+  return (
+    <View style={styles.scoreBoard}>
+      <View style={styles.scoreSide}>
+        <View style={[styles.scoreDot, { backgroundColor: theme.playerOne.color }]} />
+        <Text style={[styles.scoreName, { color: theme.text }]}>{nameOne}</Text>
+        <Text style={[styles.scoreValue, { color: theme.text }]}>{match.scoreP1}</Text>
+      </View>
+      <View style={styles.scoreMiddle}>
+        <Text style={[styles.scoreSeries, { color: theme.textMuted }]}>
+          Best of {match.seriesLength}
+        </Text>
+        <Text style={[styles.scoreTarget, { color: theme.textMuted }]}>
+          First to {match.target}
+        </Text>
+      </View>
+      <View style={styles.scoreSide}>
+        <Text style={[styles.scoreValue, { color: theme.text }]}>{match.scoreP2}</Text>
+        <Text style={[styles.scoreName, { color: theme.text }]}>{nameTwo}</Text>
+        <View style={[styles.scoreDot, { backgroundColor: theme.playerTwo.color }]} />
+      </View>
     </View>
   );
 }
@@ -217,46 +303,47 @@ function TurnIndicator({ label, color, theme, active }) {
 
   return (
     <View style={[styles.turnPill, { borderColor: color }]}>
-      <Animated.View
-        style={[styles.turnDot, { backgroundColor: color, opacity: pulse }]}
-      />
+      <Animated.View style={[styles.turnDot, { backgroundColor: color, opacity: pulse }]} />
       <Text style={[styles.turnText, { color: theme.text }]}>{label}</Text>
     </View>
   );
 }
 
 function getTurnLabel(game, config, botThinking) {
-  if (game.status === STATUS.WIN) {
-    return `${playerName(game.winner, config)} wins!`;
-  }
+  if (game.status === STATUS.WIN) return `${playerName(game.winner, config)} wins!`;
   if (game.status === STATUS.DRAW) return "It's a draw";
-  if (config.mode === MODE.VS_BOT && game.currentPlayer === PLAYER_TWO) {
+  if (config.mode === MODE.VS_BOT && game.currentPlayer === BOT_PLAYER) {
     return botThinking ? 'Bot is thinking…' : 'Bot';
   }
   return `${playerName(game.currentPlayer, config)}'s turn`;
 }
 
 function playerName(playerId, config) {
-  if (config.mode === MODE.VS_BOT) {
-    return playerId === PLAYER_ONE ? 'You' : 'Bot';
-  }
+  if (config.mode === MODE.VS_BOT) return playerId === PLAYER_ONE ? 'You' : 'Bot';
   return playerId === PLAYER_ONE ? 'Player 1' : 'Player 2';
 }
 
-function ResultOverlay({ game, config, theme, onPlayAgain, onExit }) {
+function ResultOverlay({
+  game,
+  match,
+  config,
+  theme,
+  seriesDone,
+  onNextGame,
+  onNewSeries,
+  onExit,
+}) {
   const anim = useRef(new Animated.Value(0)).current;
   useEffect(() => {
-    Animated.spring(anim, {
-      toValue: 1,
-      useNativeDriver: true,
-      bounciness: 8,
-      speed: 12,
-    }).start();
+    Animated.spring(anim, { toValue: 1, useNativeDriver: true, bounciness: 8, speed: 12 }).start();
   }, [anim]);
 
   let message;
   let accent = theme.text;
-  if (game.status === STATUS.DRAW) {
+  if (seriesDone) {
+    message = `${playerName(match.seriesWinner, config)} wins the series! 🏆`;
+    accent = playerColors(theme, match.seriesWinner).color;
+  } else if (game.status === STATUS.DRAW) {
     message = "It's a draw!";
   } else if (config.mode === MODE.VS_BOT) {
     message = game.winner === PLAYER_ONE ? 'You win! 🎉' : 'Bot wins';
@@ -280,11 +367,19 @@ function ResultOverlay({ game, config, theme, onPlayAgain, onExit }) {
         },
       ]}
     >
-      {game.status === STATUS.WIN && (
+      {(game.status === STATUS.WIN || seriesDone) && (
         <View style={[styles.resultAccent, { backgroundColor: accent }]} />
       )}
       <Text style={[styles.overlayText, { color: theme.text }]}>{message}</Text>
-      <Button title="Play Again" theme={theme} onPress={onPlayAgain} />
+      <Text style={[styles.overlayScore, { color: theme.textMuted }]}>
+        {playerName(PLAYER_ONE, config)} {match.scoreP1} — {match.scoreP2}{' '}
+        {playerName(PLAYER_TWO, config)}
+      </Text>
+      {seriesDone ? (
+        <Button title="New Series" theme={theme} onPress={onNewSeries} />
+      ) : (
+        <Button title="Next Game" theme={theme} onPress={onNextGame} />
+      )}
       <Button title="Main Menu" theme={theme} variant="ghost" onPress={onExit} />
     </Animated.View>
   );
@@ -332,12 +427,52 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
   },
+  scoreBoard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'center',
+    marginTop: 22,
+    gap: 18,
+  },
+  scoreSide: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  scoreDot: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    marginHorizontal: 8,
+  },
+  scoreName: {
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  scoreValue: {
+    fontSize: 24,
+    fontWeight: '900',
+    marginHorizontal: 8,
+    minWidth: 20,
+    textAlign: 'center',
+  },
+  scoreMiddle: {
+    alignItems: 'center',
+  },
+  scoreSeries: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  scoreTarget: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
   bottomSpacer: {
-    height: 120,
+    height: 110,
   },
   overlay: {
     marginHorizontal: 20,
-    marginBottom: 30,
+    marginBottom: 20,
     borderRadius: 20,
     padding: 24,
     alignItems: 'center',
@@ -355,7 +490,13 @@ const styles = StyleSheet.create({
   overlayText: {
     fontSize: 26,
     fontWeight: '800',
-    marginBottom: 12,
+    marginBottom: 6,
+    textAlign: 'center',
+  },
+  overlayScore: {
+    fontSize: 15,
+    fontWeight: '600',
+    marginBottom: 14,
   },
 });
 

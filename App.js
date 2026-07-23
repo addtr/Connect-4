@@ -5,6 +5,8 @@
 import React, { useState, useEffect } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { SettingsProvider } from './src/state/SettingsContext';
+import { PurchaseProvider } from './src/services/purchases';
+import { AdsProvider } from './src/services/ads';
 import { initFeedback } from './src/services/feedback';
 import MainMenuScreen from './src/screens/MainMenuScreen';
 import GameScreen from './src/screens/GameScreen';
@@ -52,7 +54,11 @@ function AppRoot() {
 export default function App() {
   return (
     <SettingsProvider>
-      <AppRoot />
+      <PurchaseProvider>
+        <AdsProvider>
+          <AppRoot />
+        </AdsProvider>
+      </PurchaseProvider>
     </SettingsProvider>
   );
 }

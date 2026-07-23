@@ -17,11 +17,13 @@ export const MODE = {
   VS_PLAYER: 'VS_PLAYER',
 };
 
-// Build the starting game state. Player One always moves first.
-export function createGame() {
+// Build the starting game state. `startingPlayer` chooses who moves first
+// (defaults to Player One).
+export function createGame(startingPlayer = PLAYER_ONE) {
   return {
     board: createBoard(),
-    currentPlayer: PLAYER_ONE,
+    startingPlayer,
+    currentPlayer: startingPlayer,
     status: STATUS.PLAYING,
     winner: null, // player id when status === WIN
     winningCells: null, // [[r,c]...] for highlight
@@ -83,7 +85,7 @@ export function undoMove(game) {
   if (game.moveHistory.length === 0) return game;
 
   const history = game.moveHistory.slice(0, -1);
-  let state = createGame();
+  let state = createGame(game.startingPlayer);
   for (const move of history) {
     state = applyMove(state, move.col);
   }
