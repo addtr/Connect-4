@@ -5,7 +5,7 @@
 // on the web / simulator (where haptics are a no-op) and never interrupts play.
 
 import { Platform } from 'react-native';
-import { Audio } from 'expo-av';
+import { createAudioPlayer, setAudioModeAsync } from 'expo-audio';
 import * as Haptics from 'expo-haptics';
 
 const SOUND_FILES = {
@@ -15,7 +15,7 @@ const SOUND_FILES = {
   draw: require('../../assets/sounds/draw.wav'),
 };
 
-const sounds = {};
+const players = {};
 let initialized = false;
 let initializing = null;
 
@@ -26,18 +26,13 @@ export async function initFeedback() {
 
   initializing = (async () => {
     try {
-      await Audio.setAudioModeAsync({
-        playsInSilentModeIOS: true,
-        shouldDuckAndroid: true,
-      });
-      await Promise.all(
-        Object.entries(SOUND_FILES).map(async ([key, mod]) => {
-          const { sound } = await Audio.Sound.createAsync(mod, {
-            volume: key === 'tap' ? 0.4 : 0.8,
-          });
-          sounds[key] = sound;
-        }),
-      );
+      // Play even when the device is on silent (iOS), matching game-audio norms.
+      await setAudioModeAsync({ playsInSilentMode: true });
+      for (const [key, mod] of Object.entries(SOUND_FILES)) {
+        const player = createAudioPlayer(mod);
+        player.volume = key === 'tap' ? 0.4 : 0.8;
+        players[key] = player;
+      }
       initialized = true;
     } catch (e) {
       // Audio is best-effort; swallow so gameplay is never blocked.
@@ -49,10 +44,16 @@ export async function initFeedback() {
 }
 
 async function play(key) {
-  const sound = sounds[key];
-  if (!sound) return;
+  const player = players[key];
+  if (!player) return;
   try {
-    await sound.replayAsync();
+    // Rewind to the start so rapid repeats (e.g. taps) always retrigger.
+    await player.seekTo(0);
+  } catch (e) {
+    // ignore seek hiccups
+  }
+  try {
+    player.play();
   } catch (e) {
     // ignore playback hiccups
   }
@@ -106,10 +107,14 @@ export function hapticDraw(hapticsEnabled) {
 
 // Optional cleanup (not strictly required for an always-on game app).
 export async function unloadFeedback() {
-  await Promise.all(
-    Object.values(sounds).map((s) => s.unloadAsync().catch(() => {})),
-  );
-  Object.keys(sounds).forEach((k) => delete sounds[k]);
+  Object.values(players).forEach((p) => {
+    try {
+      p.remove();
+    } catch (e) {
+      /* no-op */
+    }
+  });
+  Object.keys(players).forEach((k) => delete players[k]);
   initialized = false;
   initializing = null;
 }
