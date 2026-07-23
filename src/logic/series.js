@@ -3,9 +3,15 @@
 
 import { PLAYER_ONE, PLAYER_TWO } from './constants';
 
-// Series lengths offered in settings (all odd so there is always a decider).
-export const SERIES_OPTIONS = [3, 5, 7, 9, 11, 15, 21];
+// Series lengths offered in settings. 1 is a single game; the rest are odd so
+// there is always a decider.
+export const SERIES_OPTIONS = [1, 3, 5, 7, 9, 11, 15, 21];
 export const DEFAULT_SERIES_LENGTH = 3;
+
+// Display label for a series length.
+export function seriesLabel(n) {
+  return n === 1 ? 'Single game' : `Best of ${n}`;
+}
 
 // Who takes the first move in a vs-bot game.
 export const START_PREFERENCE = {

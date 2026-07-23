@@ -182,6 +182,14 @@ describe('best-of-N series', () => {
     expect(isSeriesOver(m)).toBe(false);
   });
 
+  test('single game (best of 1) is decided by one win', () => {
+    let m = createMatch(1);
+    expect(m.target).toBe(1);
+    m = recordGameResult(m, PLAYER_TWO);
+    expect(isSeriesOver(m)).toBe(true);
+    expect(m.seriesWinner).toBe(PLAYER_TWO);
+  });
+
   test('series ends when a player reaches the target', () => {
     let m = createMatch(3); // first to 2
     m = recordGameResult(m, PLAYER_ONE);

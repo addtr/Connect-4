@@ -18,9 +18,9 @@ import { LinearGradient } from 'expo-linear-gradient';
 import Button from '../components/Button';
 import { useSettings } from '../state/SettingsContext';
 import { usePurchases } from '../services/purchases';
-import { REMOVE_ADS_PRICE } from '../services/purchases';
+import { REMOVE_ADS_PRICE, PURCHASES_SIMULATED } from '../services/purchases';
 import { THEMES } from '../theme/themes';
-import { SERIES_OPTIONS, START_PREFERENCE } from '../logic/series';
+import { SERIES_OPTIONS, START_PREFERENCE, seriesLabel } from '../logic/series';
 
 const START_OPTIONS = [
   { key: START_PREFERENCE.YOU, label: 'You' },
@@ -43,12 +43,13 @@ function SettingsScreen({ onBack }) {
     setSeriesLength,
   } = useSettings();
 
-  const { isAdFree, purchasing, purchaseRemoveAds, restorePurchases } = usePurchases();
+  const { isAdFree, purchasing, purchaseRemoveAds, restorePurchases, resetPurchase } =
+    usePurchases();
 
   const onBuy = async () => {
     const res = await purchaseRemoveAds();
     if (res.success) {
-      Alert.alert('Thank you!', 'Ads have been removed. Enjoy the game!');
+      Alert.alert('Thank you!', 'Ads removed and unlimited undos unlocked. Enjoy the game!');
     } else {
       Alert.alert('Purchase failed', res.error || 'Please try again later.');
     }
@@ -154,7 +155,7 @@ function SettingsScreen({ onBack }) {
                       { color: selected ? theme.text : theme.textMuted },
                     ]}
                   >
-                    Best of {n}
+                    {seriesLabel(n)}
                   </Text>
                 </Pressable>
               );
@@ -173,16 +174,26 @@ function SettingsScreen({ onBack }) {
           </View>
 
           {/* Remove ads */}
-          <Text style={[styles.section, { color: theme.textMuted }]}>Ads</Text>
+          <Text style={[styles.section, { color: theme.textMuted }]}>Remove Ads</Text>
           {isAdFree ? (
             <View style={[styles.adFreeCard, { borderColor: theme.accent }]}>
               <Text style={[styles.adFreeText, { color: theme.text }]}>✓ Ads removed</Text>
               <Text style={[styles.adFreeSub, { color: theme.textMuted }]}>
-                Thanks for supporting the game!
+                No ads and unlimited undos. Thanks for supporting the game!
               </Text>
+              {PURCHASES_SIMULATED && (
+                <Pressable onPress={resetPurchase} style={styles.restore}>
+                  <Text style={[styles.restoreText, { color: theme.textMuted }]}>
+                    Reset purchase (debug)
+                  </Text>
+                </Pressable>
+              )}
             </View>
           ) : (
             <>
+              <Text style={[styles.adBenefits, { color: theme.textMuted }]}>
+                One-time purchase — removes all ads and gives you unlimited undos.
+              </Text>
               <Button
                 title={purchasing ? 'Processing…' : `Remove Ads — ${REMOVE_ADS_PRICE}`}
                 theme={theme}
@@ -312,6 +323,13 @@ const styles = StyleSheet.create({
   adFreeSub: {
     fontSize: 13,
     marginTop: 4,
+    textAlign: 'center',
+  },
+  adBenefits: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 12,
+    lineHeight: 20,
   },
   restore: {
     alignItems: 'center',

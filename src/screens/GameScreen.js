@@ -5,7 +5,7 @@
 // minimax / series — this screen drives them and renders state.
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { View, Text, StyleSheet, SafeAreaView, Animated } from 'react-native';
+import { View, Text, StyleSheet, SafeAreaView, Animated, Pressable, Alert } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Board from '../components/Board';
 import Button from '../components/Button';
@@ -27,6 +27,7 @@ import {
   isSeriesOver,
   resolveVsBotStarter,
   passAndPlayStarter,
+  seriesLabel,
 } from '../logic/series';
 import { playerColors } from '../theme/themes';
 import {
@@ -47,7 +48,7 @@ const BOT_THINK_MS = 500;
 function GameScreen({ config, onExit }) {
   const { theme, soundEnabled, hapticsEnabled, startPreference, seriesLength } =
     useSettings();
-  const { showInterstitial } = useAds();
+  const { showInterstitial, isAdFree } = useAds();
 
   const isVsBot = config.mode === MODE.VS_BOT;
 
@@ -61,6 +62,9 @@ function GameScreen({ config, onExit }) {
   const [match, setMatch] = useState(() => createMatch(seriesLength));
   const [game, setGame] = useState(() => createGame(starterFor(0)));
   const [botThinking, setBotThinking] = useState(false);
+  // One free undo per game (round); further undos ask to watch an ad. Ad-free
+  // owners get unlimited undos with no prompt.
+  const [freeUndoUsed, setFreeUndoUsed] = useState(false);
   const timerRef = useRef(null);
 
   const prevMoves = useRef(0);
@@ -142,6 +146,7 @@ function GameScreen({ config, onExit }) {
   const nextGame = () => {
     if (timerRef.current) clearTimeout(timerRef.current);
     setBotThinking(false);
+    setFreeUndoUsed(false);
     const g = createGame(starterFor(match.gamesPlayed));
     resetPerGameRefs(g);
     setGame(g);
@@ -151,17 +156,14 @@ function GameScreen({ config, onExit }) {
   const newSeries = () => {
     if (timerRef.current) clearTimeout(timerRef.current);
     setBotThinking(false);
+    setFreeUndoUsed(false);
     setMatch(createMatch(seriesLength));
     const g = createGame(starterFor(0));
     resetPerGameRefs(g);
     setGame(g);
   };
 
-  // Undo — gated behind an interstitial, per the app's ad design.
-  const handleUndo = async () => {
-    if (botThinking) return;
-    if (game.moveHistory.length === 0) return;
-    await showInterstitial();
+  const performUndo = () => {
     setGame((g) => {
       let next = undoMove(g);
       if (isVsBot && next.currentPlayer === BOT_PLAYER && next.moveHistory.length > 0) {
@@ -171,6 +173,36 @@ function GameScreen({ config, onExit }) {
       return next;
     });
   };
+
+  const canUndo =
+    game.status === STATUS.PLAYING && !botThinking && game.moveHistory.length > 0;
+
+  // Undo: first undo each round is free. After that, ask to watch an ad for
+  // another. Ad-free owners undo freely with no prompt.
+  const handleUndo = () => {
+    if (!canUndo) return;
+    if (isAdFree || !freeUndoUsed) {
+      performUndo();
+      if (!isAdFree) setFreeUndoUsed(true);
+      return;
+    }
+    Alert.alert(
+      'Out of free undos',
+      'You get one free undo per round. Watch a short ad to undo again?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Watch ad',
+          onPress: async () => {
+            await showInterstitial();
+            performUndo();
+          },
+        },
+      ],
+    );
+  };
+
+  const undoHint = isAdFree ? 'Unlimited' : freeUndoUsed ? 'Watch ad' : '1 free';
 
   // Menu — also gated behind an interstitial.
   const handleMenu = async () => {
@@ -207,18 +239,11 @@ function GameScreen({ config, onExit }) {
             onPress={handleMenu}
             style={styles.smallBtn}
           />
-          <TurnIndicator
-            label={turnLabel}
-            color={activeColor}
+          <UndoControl
             theme={theme}
-            active={game.status === STATUS.PLAYING}
-          />
-          <Button
-            title="Undo"
-            theme={theme}
-            variant="ghost"
             onPress={handleUndo}
-            style={styles.smallBtn}
+            disabled={!canUndo}
+            hint={undoHint}
           />
         </View>
 
@@ -232,6 +257,14 @@ function GameScreen({ config, onExit }) {
             previewPlayer={game.currentPlayer}
           />
           <ScoreBoard match={match} config={config} theme={theme} />
+          <View style={styles.turnBelow}>
+            <TurnIndicator
+              label={turnLabel}
+              color={activeColor}
+              theme={theme}
+              active={game.status === STATUS.PLAYING}
+            />
+          </View>
         </View>
 
         {game.status !== STATUS.PLAYING ? (
@@ -255,10 +288,29 @@ function GameScreen({ config, onExit }) {
   );
 }
 
+// Undo button with a small hint showing whether the next undo is free, ad-gated,
+// or unlimited (ad-free owners).
+function UndoControl({ theme, onPress, disabled, hint }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      style={[
+        styles.undoBtn,
+        { borderColor: theme.textMuted, opacity: disabled ? 0.4 : 1 },
+      ]}
+    >
+      <Text style={[styles.undoTitle, { color: theme.text }]}>Undo</Text>
+      <Text style={[styles.undoHint, { color: theme.textMuted }]}>{hint}</Text>
+    </Pressable>
+  );
+}
+
 // Score counter shown beneath the board.
 function ScoreBoard({ match, config, theme }) {
   const nameOne = playerName(PLAYER_ONE, config);
   const nameTwo = playerName(PLAYER_TWO, config);
+  const single = match.seriesLength === 1;
   return (
     <View style={styles.scoreBoard}>
       <View style={styles.scoreSide}>
@@ -268,11 +320,13 @@ function ScoreBoard({ match, config, theme }) {
       </View>
       <View style={styles.scoreMiddle}>
         <Text style={[styles.scoreSeries, { color: theme.textMuted }]}>
-          Best of {match.seriesLength}
+          {seriesLabel(match.seriesLength)}
         </Text>
-        <Text style={[styles.scoreTarget, { color: theme.textMuted }]}>
-          First to {match.target}
-        </Text>
+        {!single && (
+          <Text style={[styles.scoreTarget, { color: theme.textMuted }]}>
+            First to {match.target}
+          </Text>
+        )}
       </View>
       <View style={styles.scoreSide}>
         <Text style={[styles.scoreValue, { color: theme.text }]}>{match.scoreP2}</Text>
@@ -404,6 +458,27 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 16,
     marginVertical: 0,
+  },
+  undoBtn: {
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingVertical: 8,
+    paddingHorizontal: 18,
+    alignItems: 'center',
+  },
+  undoTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
+  undoHint: {
+    fontSize: 11,
+    fontWeight: '600',
+    marginTop: 1,
+  },
+  turnBelow: {
+    alignItems: 'center',
+    marginTop: 18,
   },
   turnPill: {
     flexDirection: 'row',

@@ -25,6 +25,10 @@ const STORAGE_KEY = '@connect4/adFree';
 // is testable end-to-end. Set to false once real StoreKit calls are wired in.
 const SIMULATE_PURCHASES = true;
 
+// Exposed so the UI can show a debug "reset" affordance while simulating (there
+// is no way to "un-buy" a real non-consumable, so this is dev-only).
+export const PURCHASES_SIMULATED = SIMULATE_PURCHASES;
+
 // ---- Store seam (replace with real SDK calls in the native build) ----
 async function runStorePurchase() {
   if (SIMULATE_PURCHASES) {
@@ -108,8 +112,14 @@ export function PurchaseProvider({ children }) {
     }
   }
 
+  // Dev-only: clear the simulated entitlement so ads come back (there is no
+  // "un-buy" for a real purchase; this is gated on SIMULATE_PURCHASES in the UI).
+  async function resetPurchase() {
+    await persistAdFree(false);
+  }
+
   const value = useMemo(
-    () => ({ isAdFree, purchasing, hydrated, purchaseRemoveAds, restorePurchases }),
+    () => ({ isAdFree, purchasing, hydrated, purchaseRemoveAds, restorePurchases, resetPurchase }),
     [isAdFree, purchasing, hydrated],
   );
 
