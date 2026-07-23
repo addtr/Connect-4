@@ -61,6 +61,18 @@ export function isSeriesOver(match) {
   return match.seriesWinner !== null;
 }
 
+// Whether to show a post-game interstitial, given the series length and the
+// number of games completed so far (including the one just finished).
+//
+// Short series (single game / best of 3) never show post-game ads. From best of
+// 5 up, an ad shows every 3 games — which for best of 5 means only after game 3,
+// and for best of 7+ means after games 3, 6, 9, ... (The return-to-menu and
+// extra-undo ads are separate from this.)
+export function shouldShowPostGameAd(seriesLength, gamesPlayed) {
+  if (seriesLength < 5) return false;
+  return gamesPlayed > 0 && gamesPlayed % 3 === 0;
+}
+
 // Resolve who moves first in a vs-bot game, given the player's preference.
 // Human is Player One, bot is Player Two.
 export function resolveVsBotStarter(preference) {

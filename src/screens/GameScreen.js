@@ -28,6 +28,7 @@ import {
   resolveVsBotStarter,
   passAndPlayStarter,
   seriesLabel,
+  shouldShowPostGameAd,
 } from '../logic/series';
 import { playerColors } from '../theme/themes';
 import {
@@ -119,7 +120,7 @@ function GameScreen({ config, onExit }) {
       if (game.status === STATUS.WIN || game.status === STATUS.DRAW) {
         // Record the game into the series exactly once.
         setMatch((m) => recordGameResult(m, game.winner));
-        // Celebrate, then show a post-game interstitial.
+        // Celebrate.
         if (game.status === STATUS.WIN) {
           setTimeout(() => {
             playWin(soundEnabled);
@@ -131,11 +132,15 @@ function GameScreen({ config, onExit }) {
             hapticDraw(hapticsEnabled);
           }, 280);
         }
-        setTimeout(() => showInterstitial(), 700);
+        // Post-game ad only for longer series, every 3 games.
+        const gamesPlayedAfter = match.gamesPlayed + 1;
+        if (shouldShowPostGameAd(match.seriesLength, gamesPlayedAfter)) {
+          setTimeout(() => showInterstitial(), 700);
+        }
       }
       prevStatus.current = game.status;
     }
-  }, [game, soundEnabled, hapticsEnabled, showInterstitial]);
+  }, [game, match, soundEnabled, hapticsEnabled, showInterstitial]);
 
   const resetPerGameRefs = (g) => {
     prevMoves.current = g.moveHistory.length;

@@ -21,6 +21,7 @@ import {
   winsNeeded,
   resolveVsBotStarter,
   passAndPlayStarter,
+  shouldShowPostGameAd,
   START_PREFERENCE,
 } from '../series';
 
@@ -210,6 +211,23 @@ describe('best-of-N series', () => {
     expect(passAndPlayStarter(0)).toBe(PLAYER_ONE);
     expect(passAndPlayStarter(1)).toBe(PLAYER_TWO);
     expect(passAndPlayStarter(2)).toBe(PLAYER_ONE);
+  });
+
+  test('post-game ad frequency by series length', () => {
+    // Single game / best of 3: never.
+    for (let g = 1; g <= 3; g++) {
+      expect(shouldShowPostGameAd(1, g)).toBe(false);
+      expect(shouldShowPostGameAd(3, g)).toBe(false);
+    }
+    // Best of 5: only after game 3.
+    expect(shouldShowPostGameAd(5, 1)).toBe(false);
+    expect(shouldShowPostGameAd(5, 3)).toBe(true);
+    expect(shouldShowPostGameAd(5, 4)).toBe(false);
+    // Best of 7+: every 3 games.
+    expect(shouldShowPostGameAd(7, 3)).toBe(true);
+    expect(shouldShowPostGameAd(7, 6)).toBe(true);
+    expect(shouldShowPostGameAd(9, 5)).toBe(false);
+    expect(shouldShowPostGameAd(21, 9)).toBe(true);
   });
 });
 
