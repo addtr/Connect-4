@@ -35,6 +35,18 @@ export function AdsProvider({ children }) {
   const [visible, setVisible] = useState(false);
   const resolverRef = useRef(null);
   const lastShownRef = useRef(0);
+  // Count of completed series per length, kept for the whole session (survives
+  // leaving and re-entering the game screen) so the "every N series" ad cadence
+  // for short series works.
+  const seriesCountsRef = useRef({});
+
+  // Record that a series of the given length just finished; returns the new
+  // session total for that length.
+  const noteSeriesComplete = useCallback((seriesLength) => {
+    const next = (seriesCountsRef.current[seriesLength] || 0) + 1;
+    seriesCountsRef.current[seriesLength] = next;
+    return next;
+  }, []);
 
   // Show an interstitial and resolve once it is dismissed. No-op (immediate
   // resolve) when the user has removed ads or one was just shown.
@@ -59,7 +71,7 @@ export function AdsProvider({ children }) {
   }, []);
 
   return (
-    <AdsContext.Provider value={{ showInterstitial, isAdFree }}>
+    <AdsContext.Provider value={{ showInterstitial, isAdFree, noteSeriesComplete }}>
       {children}
       <InterstitialPlaceholder visible={visible} onClose={handleClose} />
     </AdsContext.Provider>

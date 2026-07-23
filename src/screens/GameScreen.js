@@ -29,6 +29,7 @@ import {
   passAndPlayStarter,
   seriesLabel,
   shouldShowPostGameAd,
+  shouldShowSeriesCompletionAd,
 } from '../logic/series';
 import { playerColors } from '../theme/themes';
 import {
@@ -49,7 +50,7 @@ const BOT_THINK_MS = 500;
 function GameScreen({ config, onExit }) {
   const { theme, soundEnabled, hapticsEnabled, startPreference, seriesLength } =
     useSettings();
-  const { showInterstitial, isAdFree } = useAds();
+  const { showInterstitial, isAdFree, noteSeriesComplete } = useAds();
 
   const isVsBot = config.mode === MODE.VS_BOT;
 
@@ -119,7 +120,9 @@ function GameScreen({ config, onExit }) {
     if (game.status !== prevStatus.current) {
       if (game.status === STATUS.WIN || game.status === STATUS.DRAW) {
         // Record the game into the series exactly once.
-        setMatch((m) => recordGameResult(m, game.winner));
+        const recorded = recordGameResult(match, game.winner);
+        setMatch(recorded);
+
         // Celebrate.
         if (game.status === STATUS.WIN) {
           setTimeout(() => {
@@ -132,15 +135,26 @@ function GameScreen({ config, onExit }) {
             hapticDraw(hapticsEnabled);
           }, 280);
         }
-        // Post-game ad only for longer series, every 3 games.
-        const gamesPlayedAfter = match.gamesPlayed + 1;
-        if (shouldShowPostGameAd(match.seriesLength, gamesPlayedAfter)) {
-          setTimeout(() => showInterstitial(), 700);
+
+        // Decide whether this game-end shows an ad.
+        let showAd = false;
+        if (isSeriesOver(recorded)) {
+          // Short series (single game / best of 3) show an ad every N completed
+          // series across the session.
+          const completed = noteSeriesComplete(recorded.seriesLength);
+          if (shouldShowSeriesCompletionAd(recorded.seriesLength, completed)) {
+            showAd = true;
+          }
         }
+        // Longer series show an ad every 3 games within the series.
+        if (shouldShowPostGameAd(recorded.seriesLength, recorded.gamesPlayed)) {
+          showAd = true;
+        }
+        if (showAd) setTimeout(() => showInterstitial(), 700);
       }
       prevStatus.current = game.status;
     }
-  }, [game, match, soundEnabled, hapticsEnabled, showInterstitial]);
+  }, [game, match, soundEnabled, hapticsEnabled, showInterstitial, noteSeriesComplete]);
 
   const resetPerGameRefs = (g) => {
     prevMoves.current = g.moveHistory.length;

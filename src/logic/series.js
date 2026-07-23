@@ -61,16 +61,31 @@ export function isSeriesOver(match) {
   return match.seriesWinner !== null;
 }
 
-// Whether to show a post-game interstitial, given the series length and the
-// number of games completed so far (including the one just finished).
-//
-// Short series (single game / best of 3) never show post-game ads. From best of
-// 5 up, an ad shows every 3 games — which for best of 5 means only after game 3,
-// and for best of 7+ means after games 3, 6, 9, ... (The return-to-menu and
-// extra-undo ads are separate from this.)
+// Ad cadence for the shortest series, counted per *completed series* (across
+// the session) rather than per game — since these series are quick, ads are
+// spaced out over several of them.
+export const SERIES_COMPLETION_AD_THRESHOLD = {
+  1: 4, // single game: an ad every 4 completed games
+  3: 2, // best of 3: an ad every 2 completed series
+};
+
+// Whether to show a post-*game* interstitial, given the series length and the
+// number of games completed in the current series (including the one just
+// finished). Only applies to best of 5 and up; from best of 5 an ad shows every
+// 3 games (best of 5 -> only after game 3; best of 7+ -> games 3, 6, 9, ...).
 export function shouldShowPostGameAd(seriesLength, gamesPlayed) {
   if (seriesLength < 5) return false;
   return gamesPlayed > 0 && gamesPlayed % 3 === 0;
+}
+
+// Whether to show an interstitial when a whole series finishes, given the series
+// length and how many series of that length have been completed this session
+// (including the one just finished). Only single game (every 4) and best of 3
+// (every 2) use this; longer series rely on shouldShowPostGameAd instead.
+export function shouldShowSeriesCompletionAd(seriesLength, seriesCompletedCount) {
+  const threshold = SERIES_COMPLETION_AD_THRESHOLD[seriesLength];
+  if (!threshold) return false;
+  return seriesCompletedCount > 0 && seriesCompletedCount % threshold === 0;
 }
 
 // Resolve who moves first in a vs-bot game, given the player's preference.

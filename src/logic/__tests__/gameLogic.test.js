@@ -22,6 +22,7 @@ import {
   resolveVsBotStarter,
   passAndPlayStarter,
   shouldShowPostGameAd,
+  shouldShowSeriesCompletionAd,
   START_PREFERENCE,
 } from '../series';
 
@@ -228,6 +229,21 @@ describe('best-of-N series', () => {
     expect(shouldShowPostGameAd(7, 6)).toBe(true);
     expect(shouldShowPostGameAd(9, 5)).toBe(false);
     expect(shouldShowPostGameAd(21, 9)).toBe(true);
+  });
+
+  test('series-completion ad cadence for short series', () => {
+    // Single game: every 4 completed series.
+    expect(shouldShowSeriesCompletionAd(1, 1)).toBe(false);
+    expect(shouldShowSeriesCompletionAd(1, 3)).toBe(false);
+    expect(shouldShowSeriesCompletionAd(1, 4)).toBe(true);
+    expect(shouldShowSeriesCompletionAd(1, 8)).toBe(true);
+    // Best of 3: every 2 completed series.
+    expect(shouldShowSeriesCompletionAd(3, 1)).toBe(false);
+    expect(shouldShowSeriesCompletionAd(3, 2)).toBe(true);
+    expect(shouldShowSeriesCompletionAd(3, 4)).toBe(true);
+    // Longer series don't use this path.
+    expect(shouldShowSeriesCompletionAd(5, 2)).toBe(false);
+    expect(shouldShowSeriesCompletionAd(7, 4)).toBe(false);
   });
 });
 
