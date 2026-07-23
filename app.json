@@ -1,0 +1,32 @@
+{
+  "expo": {
+    "name": "Connect Four",
+    "slug": "connect-four",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#12203a"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.solodev.connectfour"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#12203a"
+      },
+      "package": "com.solodev.connectfour"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    }
+  }
+}
