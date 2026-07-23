@@ -1,23 +1,30 @@
 // The Connect Four board. Renders 7 tappable columns of 6 cells and reports the
-// tapped column up to the parent. Tapping a column shows a lightweight ghost
-// preview of where the piece will land (pass two expands this into a richer
-// preview + drop animation).
+// tapped column to the parent. While a column is pressed it shows an animated
+// ghost disc at the landing spot so it is clear where the piece will drop.
 
-import React, { useState } from 'react';
-import { View, Pressable, StyleSheet, useWindowDimensions } from 'react-native';
+import React, { useState, useRef, useEffect } from 'react';
+import {
+  View,
+  Pressable,
+  StyleSheet,
+  Animated,
+  useWindowDimensions,
+} from 'react-native';
 import { ROWS, COLS, EMPTY } from '../logic/constants';
 import { getDropRow, isColumnPlayable } from '../logic/board';
 import { playerColors } from '../theme/themes';
 import Disc from './Disc';
 
+const CELL_MARGIN = 3;
+
 function Board({ board, theme, onColumnPress, disabled, winningCells, previewPlayer }) {
   const { width } = useWindowDimensions();
   const [activeCol, setActiveCol] = useState(null);
 
-  // Size the board to fit the screen with side padding.
   const horizontalPadding = 32;
   const boardWidth = Math.min(width - horizontalPadding, 440);
   const cellSize = Math.floor(boardWidth / COLS) - 6;
+  const pitch = cellSize + CELL_MARGIN * 2;
 
   const isWinningCell = (r, c) =>
     !!winningCells && winningCells.some(([wr, wc]) => wr === r && wc === c);
@@ -28,7 +35,16 @@ function Board({ board, theme, onColumnPress, disabled, winningCells, previewPla
   };
 
   return (
-    <View style={[styles.board, { backgroundColor: theme.boardColor, padding: 6 }]}>
+    <View
+      style={[
+        styles.board,
+        {
+          backgroundColor: theme.boardColor,
+          padding: 6,
+          shadowColor: theme.boardShadow,
+        },
+      ]}
+    >
       {Array.from({ length: COLS }).map((_, col) => {
         const previewRow =
           activeCol === col && !disabled && isColumnPlayable(board, col)
@@ -47,6 +63,9 @@ function Board({ board, theme, onColumnPress, disabled, winningCells, previewPla
             {Array.from({ length: ROWS }).map((__, row) => {
               const value = board[row][col];
               const showGhost = row === previewRow && value === EMPTY;
+              // Distance the dropped piece falls: from just above the board down
+              // to this row.
+              const fallDistance = pitch * (row + 1);
               return (
                 <View key={row} style={styles.cellWrap}>
                   <Disc
@@ -54,19 +73,12 @@ function Board({ board, theme, onColumnPress, disabled, winningCells, previewPla
                     size={cellSize}
                     theme={theme}
                     highlighted={isWinningCell(row, col)}
+                    fallDistance={fallDistance}
                   />
                   {showGhost && (
-                    <View
-                      pointerEvents="none"
-                      style={[
-                        styles.ghost,
-                        {
-                          width: cellSize,
-                          height: cellSize,
-                          borderRadius: cellSize / 2,
-                          borderColor: playerColors(theme, previewPlayer || 1).color,
-                        },
-                      ]}
+                    <GhostDisc
+                      size={cellSize}
+                      color={playerColors(theme, previewPlayer || 1).color}
                     />
                   )}
                 </View>
@@ -79,11 +91,48 @@ function Board({ board, theme, onColumnPress, disabled, winningCells, previewPla
   );
 }
 
+// A softly pulsing outline showing where a tapped piece will land.
+function GhostDisc({ size, color }) {
+  const pulse = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 1, duration: 600, useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 0, duration: 600, useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [pulse]);
+
+  const opacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.35, 0.8] });
+
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={[
+        styles.ghost,
+        {
+          width: size,
+          height: size,
+          borderRadius: size / 2,
+          borderColor: color,
+          opacity,
+        },
+      ]}
+    />
+  );
+}
+
 const styles = StyleSheet.create({
   board: {
     flexDirection: 'row',
     borderRadius: 18,
     alignSelf: 'center',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+    elevation: 8,
   },
   column: {
     flexDirection: 'column',
@@ -95,9 +144,7 @@ const styles = StyleSheet.create({
   },
   ghost: {
     position: 'absolute',
-    margin: 3,
     borderWidth: 3,
-    opacity: 0.7,
   },
 });
 

@@ -1,9 +1,15 @@
-// Simple themed pressable button used across menus and screens.
+// Simple themed pressable button used across menus and screens. Plays a short
+// tap sound (respecting the sound setting) and animates a subtle press scale.
 
-import React from 'react';
-import { Pressable, Text, StyleSheet } from 'react-native';
+import React, { useRef } from 'react';
+import { Pressable, Text, StyleSheet, Animated } from 'react-native';
+import { useSettings } from '../state/SettingsContext';
+import { playTap } from '../services/feedback';
 
 function Button({ title, onPress, theme, variant = 'primary', style }) {
+  const { soundEnabled } = useSettings();
+  const scale = useRef(new Animated.Value(1)).current;
+
   const bg =
     variant === 'primary'
       ? theme.accent
@@ -12,17 +18,32 @@ function Button({ title, onPress, theme, variant = 'primary', style }) {
       : theme.boardColor;
   const borderColor = variant === 'ghost' ? theme.textMuted : 'transparent';
 
+  const pressIn = () => {
+    Animated.spring(scale, { toValue: 0.96, useNativeDriver: true, speed: 40 }).start();
+  };
+  const pressOut = () => {
+    Animated.spring(scale, { toValue: 1, useNativeDriver: true, speed: 40 }).start();
+  };
+  const handlePress = () => {
+    playTap(soundEnabled);
+    onPress && onPress();
+  };
+
   return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.button,
-        { backgroundColor: bg, borderColor, opacity: pressed ? 0.75 : 1 },
-        style,
-      ]}
-    >
-      <Text style={[styles.text, { color: theme.text }]}>{title}</Text>
-    </Pressable>
+    <Animated.View style={{ transform: [{ scale }] }}>
+      <Pressable
+        onPress={handlePress}
+        onPressIn={pressIn}
+        onPressOut={pressOut}
+        style={({ pressed }) => [
+          styles.button,
+          { backgroundColor: bg, borderColor, opacity: pressed ? 0.85 : 1 },
+          style,
+        ]}
+      >
+        <Text style={[styles.text, { color: theme.text }]}>{title}</Text>
+      </Pressable>
+    </Animated.View>
   );
 }
 

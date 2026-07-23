@@ -161,6 +161,27 @@ describe('bot AI', () => {
     expect(chooseBotMove(b, PLAYER_TWO, DIFFICULTY.MEDIUM)).toBe(3);
   });
 
+  test('medium and hard reliably block across many runs (no random slip)', () => {
+    const b = createBoard();
+    b[5][0] = PLAYER_ONE;
+    b[5][1] = PLAYER_ONE;
+    b[5][2] = PLAYER_ONE;
+    for (let i = 0; i < 50; i++) {
+      expect(chooseBotMove(b, PLAYER_TWO, DIFFICULTY.MEDIUM)).toBe(3);
+      expect(chooseBotMove(b, PLAYER_TWO, DIFFICULTY.HARD)).toBe(3);
+    }
+  });
+
+  test('hard reliably takes a win across many runs', () => {
+    const b = createBoard();
+    b[5][0] = PLAYER_TWO;
+    b[5][1] = PLAYER_TWO;
+    b[5][2] = PLAYER_TWO;
+    for (let i = 0; i < 50; i++) {
+      expect(chooseBotMove(b, PLAYER_TWO, DIFFICULTY.HARD)).toBe(3);
+    }
+  });
+
   test('always returns a legal column', () => {
     const b = createBoard();
     const move = chooseBotMove(b, PLAYER_TWO, DIFFICULTY.HARD);

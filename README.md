@@ -17,11 +17,18 @@ Expo), built with React Native + Expo.
 - Win detection (horizontal, vertical, both diagonals) and draw detection.
 - Turn management, undo, reset / new game.
 - Minimax bot with alpha-beta pruning at three difficulties.
-- Two color themes and a settings screen (sound/haptics toggles are wired
-  as state, ready for pass two).
 
-**Pass two (planned):** drop animations with settle/bounce, winning-line glow,
-richer column previews, sound effects, iOS haptics, and menu/post-game polish.
+**Pass two (complete):** polish.
+
+- Piece **drop animation** — the disc springs down from above the column and
+  settles with a slight bounce.
+- **Winning line** runs a looping glow/pulse on the four connecting pieces.
+- Animated **column preview** — a pulsing ghost disc shows where a tapped
+  piece will land.
+- **Sound effects** (drop, win, draw, button tap) with a mute toggle, and
+  **iOS haptics** (light impact on drop, success on win, warning on draw).
+- Two color **themes** (Classic, Midnight), selectable in settings.
+- Gradient backgrounds, animated menu hero, and an animated post-game overlay.
 
 ## Architecture
 
@@ -39,9 +46,12 @@ src/
     __tests__/      #   jest unit tests
   theme/themes.js   # color themes
   state/            # settings context (theme, sound, haptics)
-  components/       # Board, Disc, Button
+  services/
+    feedback.js     # sound + haptic playback (gated on settings)
+  components/       # Board, Disc (animated), Button
   screens/          # MainMenu, Game, Settings
 App.js              # root screen switcher
+assets/sounds/      # generated WAV sound effects
 ```
 
 ## Bot difficulty
@@ -55,8 +65,12 @@ a perfect solver, so it stays beatable and casual.
 | Medium    | 4 ply        | 12%                | yes                    |
 | Hard      | 6 ply        | 0%                 | yes                    |
 
-Immediate wins are always taken. On the bot's turn a short (~500 ms) "thinking"
-delay is applied so instant moves don't feel abrupt.
+On Medium and Hard, immediate wins and immediate blocks are never skipped — the
+random-move chance only adds variety in non-critical positions, so those bots
+never blunder an obvious move. Easy is looser: it may play randomly even when a
+win is available and never blocks, which keeps it a genuinely easy opponent. On
+the bot's turn a short (~500 ms) "thinking" delay is applied so instant moves
+don't feel abrupt.
 
 ## Running
 

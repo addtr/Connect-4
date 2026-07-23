@@ -192,30 +192,43 @@ function randomChoice(arr) {
 
 // Public entry point. Returns the column the bot chooses to play.
 //
-// `difficulty` is one of the DIFFICULTY presets. On lower difficulties there is
-// a chance of a random legal move; otherwise it runs the search. Even when
-// searching, immediate wins and immediate blocks are handled first so the bot
-// never misses something obvious (and Easy still occasionally slips via its
-// random roll before this point).
+// `difficulty` is one of the DIFFICULTY presets. The random-move chance adds
+// variety and keeps easier bots beatable, but it never throws away a critical
+// move on Medium/Hard: those difficulties always take an immediate win and
+// always block an immediate loss, and only randomize among non-critical
+// positions. Easy is looser — its random roll can even miss an obvious move,
+// and it never blocks — which is what makes it a genuinely easy opponent.
 export function chooseBotMove(board, aiPlayer, difficulty) {
   const valid = getValidColumns(board);
   if (valid.length === 0) return null;
 
-  // Random-move roll (keeps Easy/Medium beatable and less predictable).
+  if (difficulty.key === 'EASY') {
+    // Easy: frequently plays randomly (and may miss a win); never blocks.
+    if (Math.random() < difficulty.randomChance) {
+      return randomChoice(valid);
+    }
+    const win = findImmediateWin(board, aiPlayer);
+    if (win !== null) return win;
+    return runSearch(board, aiPlayer, difficulty, valid);
+  }
+
+  // Medium / Hard: critical moves are non-negotiable.
+  const win = findImmediateWin(board, aiPlayer);
+  if (win !== null) return win;
+
+  const block = findImmediateWin(board, opponentOf(aiPlayer));
+  if (block !== null) return block;
+
+  // In non-critical positions, Medium occasionally plays a random legal move
+  // ("mostly optimal but not perfect"); Hard never does.
   if (difficulty.randomChance > 0 && Math.random() < difficulty.randomChance) {
     return randomChoice(valid);
   }
 
-  // Always grab an immediate win if one exists.
-  const winningMove = findImmediateWin(board, aiPlayer);
-  if (winningMove !== null) return winningMove;
+  return runSearch(board, aiPlayer, difficulty, valid);
+}
 
-  // On anything above Easy, always block an immediate opponent win.
-  if (difficulty.key !== 'EASY') {
-    const block = findImmediateWin(board, opponentOf(aiPlayer));
-    if (block !== null) return block;
-  }
-
+function runSearch(board, aiPlayer, difficulty, valid) {
   const { col } = minimax(
     board,
     difficulty.depth,

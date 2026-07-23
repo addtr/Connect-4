@@ -1,10 +1,11 @@
 // The gameplay screen. Handles both modes (vs bot, pass-and-play), the turn
-// indicator, bot turns with a short "thinking" delay, and the post-game result
-// overlay. All rules live in gameEngine / minimax — this screen just drives them
-// and renders state.
+// indicator, bot turns with a short "thinking" delay, sound/haptic feedback, and
+// an animated post-game result overlay. All rules live in gameEngine / minimax —
+// this screen drives them and renders state.
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { View, Text, StyleSheet, SafeAreaView } from 'react-native';
+import { View, Text, StyleSheet, SafeAreaView, Animated } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import Board from '../components/Board';
 import Button from '../components/Button';
 import { useSettings } from '../state/SettingsContext';
@@ -18,6 +19,14 @@ import {
 import { PLAYER_ONE, PLAYER_TWO } from '../logic/constants';
 import { chooseBotMove } from '../logic/minimax';
 import { playerColors } from '../theme/themes';
+import {
+  playDrop,
+  playWin,
+  playDraw,
+  hapticDrop,
+  hapticWin,
+  hapticDraw,
+} from '../services/feedback';
 
 // The bot always plays as Player Two; the human is Player One in vs-bot mode.
 const BOT_PLAYER = PLAYER_TWO;
@@ -26,10 +35,13 @@ const BOT_PLAYER = PLAYER_TWO;
 const BOT_THINK_MS = 500;
 
 function GameScreen({ config, onExit }) {
-  const { theme } = useSettings();
+  const { theme, soundEnabled, hapticsEnabled } = useSettings();
   const [game, setGame] = useState(() => createGame());
   const [botThinking, setBotThinking] = useState(false);
   const timerRef = useRef(null);
+
+  const prevMoves = useRef(0);
+  const prevStatus = useRef(STATUS.PLAYING);
 
   const isVsBot = config.mode === MODE.VS_BOT;
   const isBotTurn = isVsBot && game.currentPlayer === BOT_PLAYER;
@@ -51,7 +63,6 @@ function GameScreen({ config, onExit }) {
 
     setBotThinking(true);
     const startedAt = Date.now();
-    // Compute the move (fast); then wait out the remaining think time.
     const col = chooseBotMove(game.board, BOT_PLAYER, config.difficulty);
     const elapsed = Date.now() - startedAt;
     const wait = Math.max(0, BOT_THINK_MS - elapsed);
@@ -69,21 +80,50 @@ function GameScreen({ config, onExit }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [game, isVsBot]);
 
+  // Sound + haptic feedback driven off state transitions.
+  useEffect(() => {
+    const moves = game.moveHistory.length;
+    if (moves > prevMoves.current) {
+      playDrop(soundEnabled);
+      hapticDrop(hapticsEnabled);
+    }
+    prevMoves.current = moves;
+
+    if (game.status !== prevStatus.current) {
+      if (game.status === STATUS.WIN) {
+        // Let the drop settle first, then celebrate.
+        setTimeout(() => {
+          playWin(soundEnabled);
+          hapticWin(hapticsEnabled);
+        }, 280);
+      } else if (game.status === STATUS.DRAW) {
+        setTimeout(() => {
+          playDraw(soundEnabled);
+          hapticDraw(hapticsEnabled);
+        }, 280);
+      }
+      prevStatus.current = game.status;
+    }
+  }, [game, soundEnabled, hapticsEnabled]);
+
   const resetGame = () => {
     if (timerRef.current) clearTimeout(timerRef.current);
     setBotThinking(false);
+    prevMoves.current = 0;
+    prevStatus.current = STATUS.PLAYING;
     setGame(createGame());
   };
 
   const handleUndo = () => {
     if (botThinking) return;
-    // In vs-bot mode, undo both the bot's reply and the player's move so the
-    // human gets their turn back.
     setGame((g) => {
       let next = undoMove(g);
       if (isVsBot && next.currentPlayer === BOT_PLAYER && next.moveHistory.length > 0) {
         next = undoMove(next);
       }
+      // Keep feedback counters in sync so undo doesn't trigger a drop sound.
+      prevMoves.current = next.moveHistory.length;
+      prevStatus.current = next.status;
       return next;
     });
   };
@@ -101,45 +141,87 @@ function GameScreen({ config, onExit }) {
       : theme.textMuted;
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
-      <View style={styles.topBar}>
-        <Button title="Menu" theme={theme} variant="ghost" onPress={onExit} style={styles.smallBtn} />
-        <View style={[styles.turnPill, { borderColor: activeColor }]}>
-          <View style={[styles.turnDot, { backgroundColor: activeColor }]} />
-          <Text style={[styles.turnText, { color: theme.text }]}>{turnLabel}</Text>
+    <View style={styles.root}>
+      <LinearGradient
+        colors={[theme.background, theme.boardShadow]}
+        style={StyleSheet.absoluteFill}
+      />
+      <SafeAreaView style={styles.container}>
+        <View style={styles.topBar}>
+          <Button
+            title="Menu"
+            theme={theme}
+            variant="ghost"
+            onPress={onExit}
+            style={styles.smallBtn}
+          />
+          <TurnIndicator
+            label={turnLabel}
+            color={activeColor}
+            theme={theme}
+            active={game.status === STATUS.PLAYING}
+          />
+          <Button
+            title="Undo"
+            theme={theme}
+            variant="ghost"
+            onPress={handleUndo}
+            style={styles.smallBtn}
+          />
         </View>
-        <Button
-          title="Undo"
-          theme={theme}
-          variant="ghost"
-          onPress={handleUndo}
-          style={styles.smallBtn}
-        />
-      </View>
 
-      <View style={styles.boardArea}>
-        <Board
-          board={game.board}
-          theme={theme}
-          onColumnPress={handleColumnPress}
-          disabled={game.status !== STATUS.PLAYING || isBotTurn}
-          winningCells={game.winningCells}
-          previewPlayer={game.currentPlayer}
-        />
-      </View>
+        <View style={styles.boardArea}>
+          <Board
+            board={game.board}
+            theme={theme}
+            onColumnPress={handleColumnPress}
+            disabled={game.status !== STATUS.PLAYING || isBotTurn}
+            winningCells={game.winningCells}
+            previewPlayer={game.currentPlayer}
+          />
+        </View>
 
-      {game.status !== STATUS.PLAYING ? (
-        <ResultOverlay
-          game={game}
-          config={config}
-          theme={theme}
-          onPlayAgain={resetGame}
-          onExit={onExit}
-        />
-      ) : (
-        <View style={styles.bottomSpacer} />
-      )}
-    </SafeAreaView>
+        {game.status !== STATUS.PLAYING ? (
+          <ResultOverlay
+            game={game}
+            config={config}
+            theme={theme}
+            onPlayAgain={resetGame}
+            onExit={onExit}
+          />
+        ) : (
+          <View style={styles.bottomSpacer} />
+        )}
+      </SafeAreaView>
+    </View>
+  );
+}
+
+// Turn pill with a gentle breathing pulse while the game is live.
+function TurnIndicator({ label, color, theme, active }) {
+  const pulse = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    if (!active) {
+      pulse.setValue(1);
+      return;
+    }
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 0.5, duration: 700, useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 1, duration: 700, useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [active, pulse, label]);
+
+  return (
+    <View style={[styles.turnPill, { borderColor: color }]}>
+      <Animated.View
+        style={[styles.turnDot, { backgroundColor: color, opacity: pulse }]}
+      />
+      <Text style={[styles.turnText, { color: theme.text }]}>{label}</Text>
+    </View>
   );
 }
 
@@ -162,25 +244,56 @@ function playerName(playerId, config) {
 }
 
 function ResultOverlay({ game, config, theme, onPlayAgain, onExit }) {
+  const anim = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.spring(anim, {
+      toValue: 1,
+      useNativeDriver: true,
+      bounciness: 8,
+      speed: 12,
+    }).start();
+  }, [anim]);
+
   let message;
+  let accent = theme.text;
   if (game.status === STATUS.DRAW) {
     message = "It's a draw!";
   } else if (config.mode === MODE.VS_BOT) {
     message = game.winner === PLAYER_ONE ? 'You win! 🎉' : 'Bot wins';
+    accent = playerColors(theme, game.winner).color;
   } else {
     message = `${playerName(game.winner, config)} wins! 🎉`;
+    accent = playerColors(theme, game.winner).color;
   }
 
+  const scale = anim.interpolate({ inputRange: [0, 1], outputRange: [0.85, 1] });
+
   return (
-    <View style={[styles.overlay, { backgroundColor: theme.boardColor }]}>
+    <Animated.View
+      style={[
+        styles.overlay,
+        {
+          backgroundColor: theme.boardColor,
+          shadowColor: theme.boardShadow,
+          opacity: anim,
+          transform: [{ scale }],
+        },
+      ]}
+    >
+      {game.status === STATUS.WIN && (
+        <View style={[styles.resultAccent, { backgroundColor: accent }]} />
+      )}
       <Text style={[styles.overlayText, { color: theme.text }]}>{message}</Text>
       <Button title="Play Again" theme={theme} onPress={onPlayAgain} />
       <Button title="Main Menu" theme={theme} variant="ghost" onPress={onExit} />
-    </View>
+    </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+  },
   container: {
     flex: 1,
   },
@@ -228,6 +341,16 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     padding: 24,
     alignItems: 'center',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.4,
+    shadowRadius: 14,
+    elevation: 10,
+  },
+  resultAccent: {
+    width: 56,
+    height: 6,
+    borderRadius: 3,
+    marginBottom: 14,
   },
   overlayText: {
     fontSize: 26,

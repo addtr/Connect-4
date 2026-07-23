@@ -4,6 +4,7 @@
 
 import React from 'react';
 import { View, Text, StyleSheet, SafeAreaView, Pressable, Switch } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import Button from '../components/Button';
 import { useSettings } from '../state/SettingsContext';
 import { THEMES } from '../theme/themes';
@@ -20,8 +21,13 @@ function SettingsScreen({ onBack }) {
   } = useSettings();
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
-      <Text style={[styles.title, { color: theme.text }]}>Settings</Text>
+    <View style={styles.root}>
+      <LinearGradient
+        colors={[theme.background, theme.boardShadow]}
+        style={StyleSheet.absoluteFill}
+      />
+      <SafeAreaView style={styles.container}>
+        <Text style={[styles.title, { color: theme.text }]}>Settings</Text>
 
       <Text style={[styles.section, { color: theme.textMuted }]}>Theme</Text>
       <View style={styles.themeRow}>
@@ -59,14 +65,18 @@ function SettingsScreen({ onBack }) {
         <Switch value={hapticsEnabled} onValueChange={setHapticsEnabled} />
       </View>
 
-      <View style={styles.footer}>
-        <Button title="Back" theme={theme} onPress={onBack} />
-      </View>
-    </SafeAreaView>
+        <View style={styles.footer}>
+          <Button title="Back" theme={theme} onPress={onBack} />
+        </View>
+      </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+  },
   container: {
     flex: 1,
     paddingHorizontal: 24,

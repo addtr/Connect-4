@@ -2,9 +2,10 @@
 // dependency yet) to keep the scaffold lean and fully playable. The three
 // screens — menu, game, settings — are swapped by local state.
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { SettingsProvider } from './src/state/SettingsContext';
+import { initFeedback } from './src/services/feedback';
 import MainMenuScreen from './src/screens/MainMenuScreen';
 import GameScreen from './src/screens/GameScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
@@ -18,6 +19,11 @@ const SCREEN = {
 function AppRoot() {
   const [screen, setScreen] = useState(SCREEN.MENU);
   const [gameConfig, setGameConfig] = useState(null);
+
+  // Preload sound effects once at startup (best-effort).
+  useEffect(() => {
+    initFeedback();
+  }, []);
 
   const startGame = (config) => {
     setGameConfig(config);
