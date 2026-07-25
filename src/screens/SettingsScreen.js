@@ -13,6 +13,7 @@ import {
   ScrollView,
   Alert,
   ActivityIndicator,
+  Linking,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Button from '../components/Button';
@@ -21,6 +22,7 @@ import { usePurchases } from '../services/purchases';
 import { REMOVE_ADS_PRICE, PURCHASES_SIMULATED } from '../services/purchases';
 import { THEMES } from '../theme/themes';
 import { SERIES_OPTIONS, START_PREFERENCE, seriesLabel } from '../logic/series';
+import { PRIVACY_URL, TERMS_URL, SUPPORT_EMAIL, APP_VERSION } from '../legal';
 
 const START_OPTIONS = [
   { key: START_PREFERENCE.YOU, label: 'You' },
@@ -63,6 +65,14 @@ function SettingsScreen({ onBack }) {
         ? 'Your Remove Ads purchase is active.'
         : 'No previous purchase was found for this account.',
     );
+  };
+
+  const openLink = async (url) => {
+    try {
+      await Linking.openURL(url);
+    } catch (e) {
+      Alert.alert('Could not open link', 'Please try again or visit addtr.labs.');
+    }
   };
 
   return (
@@ -211,12 +221,38 @@ function SettingsScreen({ onBack }) {
             </>
           )}
 
+          {/* About & legal */}
+          <Text style={[styles.section, { color: theme.textMuted }]}>About &amp; Legal</Text>
+          <LinkRow label="Privacy Policy" theme={theme} onPress={() => openLink(PRIVACY_URL)} />
+          <LinkRow label="Terms of Use" theme={theme} onPress={() => openLink(TERMS_URL)} />
+          <LinkRow
+            label="Contact us"
+            theme={theme}
+            onPress={() => openLink('mailto:' + SUPPORT_EMAIL)}
+          />
+          <Text style={[styles.version, { color: theme.textMuted }]}>
+            Connect Four · Version {APP_VERSION}
+          </Text>
+
           <View style={styles.footer}>
             <Button title="Back" theme={theme} onPress={onBack} />
           </View>
         </ScrollView>
       </SafeAreaView>
     </View>
+  );
+}
+
+// A tappable settings row that opens an external link.
+function LinkRow({ label, theme, onPress }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [styles.linkRow, { opacity: pressed ? 0.6 : 1 }]}
+    >
+      <Text style={[styles.linkLabel, { color: theme.text }]}>{label}</Text>
+      <Text style={[styles.linkChevron, { color: theme.textMuted }]}>›</Text>
+    </Pressable>
   );
 }
 
@@ -339,6 +375,27 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
     textDecorationLine: 'underline',
+  },
+  linkRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(128,128,128,0.25)',
+  },
+  linkLabel: {
+    fontSize: 17,
+    fontWeight: '600',
+  },
+  linkChevron: {
+    fontSize: 22,
+    fontWeight: '700',
+  },
+  version: {
+    fontSize: 13,
+    textAlign: 'center',
+    marginTop: 18,
   },
   footer: {
     alignItems: 'center',
